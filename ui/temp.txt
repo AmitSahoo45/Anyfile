@@ -1,0 +1,59 @@
+// 'use client';
+
+// import React, { useEffect } from 'react';
+// import anime from 'animejs';
+
+// interface SplashScreenProps {
+//     onAnimationComplete: () => void;
+// }
+
+// const SplashScreen: React.FC<SplashScreenProps> = ({ onAnimationComplete }) => {
+//     useEffect(() => {
+//         const greetings = ["नमस्ते", "Bienvenido", "Bonjour", "Hello", "Ciao"];
+
+//         const timeline = anime.timeline({
+//             easing: 'easeInOutQuad',
+//             complete: onAnimationComplete,
+//         });
+
+//         greetings.forEach((greeting) => {
+//             timeline
+//                 .add({
+//                     targets: '.splash-greeting',
+//                     opacity: [0, 1],
+//                     translateY: [-50, 0],
+//                     duration: 500,
+//                     begin: () => {
+//                         const el = document.querySelector('.splash-greeting');
+//                         if (el) el.textContent = greeting;
+//                     },
+//                 })
+//                 .add({
+//                     targets: '.splash-greeting',
+//                     opacity: [1, 0],
+//                     translateY: [0, 50],
+//                     duration: 150, // Increased from 100ms for a smoother fade-out
+//                     delay: 300,    // Slight delay before starting the fade-out
+//                 });
+//         });
+
+//         timeline.add({
+//             targets: '.splash',
+//             opacity: [1, 0],
+//             duration: 500, // Longer duration for overall splash fade-out
+//         });
+//     }, [onAnimationComplete]);
+
+//     return (
+//         <div
+//             className="splash fixed inset-0 flex items-center justify-center bg-black z-50"
+//             style={{ opacity: 0 }}
+//         >
+//             <h1 className="splash-greeting opacity-0 text-white text-4xl font-bold">
+//                 {/* This text is updated by the timeline */}
+//             </h1>
+//         </div>
+//     );
+// };
+
+// export default SplashScreen;
