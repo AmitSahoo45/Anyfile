@@ -2,29 +2,23 @@
 
 import React, { useCallback, useState } from 'react';
 import { useDropzone, FileRejection, DropEvent } from 'react-dropzone';
-import JSZip from 'jszip';
 import { CheckCircleIcon, ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { Button } from '@headlessui/react';
+import ImageConverter from '@/lib/image-converter';
+import JSZip from 'jszip';
 
 import { MAX_FILES, MAX_FILE_SIZE_MB } from '@/constants';
-
-type ConversionStatus = 'pending' | 'converting' | 'success' | 'error';
-
-interface FileConversionResult {
-    fileName: string;
-    progress: number;
-    status: ConversionStatus;
-    result?: Blob;
-    error?: string;
-}
-
-const outputFormats = ['jpg', 'png', 'gif', 'bmp', 'tiff', 'webp'];
+import { MagickFormat } from '@imagemagick/magick-wasm';
+import Error from 'next/error';
+import { convertImages, extractGIFFrames } from '@/lib/ImageMagickService';
 
 const ImagesPage: React.FC = () => {
     const [errors, setErrors] = useState<string[]>([]);
     const [files, setFiles] = useState<File[]>([]);
-    const [selectedFormat, setSelectedFormat] = useState<string>('jpg');
+    const [selectedFormat, setSelectedFormat] = useState<MagickFormat>(MagickFormat.Jpg);
     const [conversionResults, setConversionResults] = useState<FileConversionResult[]>([]);
+    const outputFormats = ['jpg', 'png', 'gif', 'bmp', 'tiff', 'webp'];
+    const [converter] = useState(() => new ImageConverter());
 
     const onDrop = useCallback(
         (acceptedFiles: File[], fileRejections: FileRejection[], event: DropEvent) => {
@@ -69,8 +63,7 @@ const ImagesPage: React.FC = () => {
         maxFiles: MAX_FILES,
     });
 
-    const handleRemoveFile = (index: number) =>
-        setFiles(prevFiles => prevFiles.filter((_, i) => i !== index));
+    const handleRemoveFile = (index: number) => setFiles(prevFiles => prevFiles.filter((_, i) => i !== index));
 
     const handleClearFiles = () => {
         setFiles([]);
@@ -78,56 +71,169 @@ const ImagesPage: React.FC = () => {
         setErrors([]);
     };
 
-    const startConversion = () => {
-        const initialResults: FileConversionResult[] = files.map(file => ({
-            fileName: file.name,
-            progress: 0,
-            status: 'pending',
-        }));
-        setConversionResults(initialResults);
+    //#region Conversion Logic
+    // const startConversion = async () => {
+    //     const newResults: FileConversionResult[] = Array(files.length).fill(null).map(() => ({
+    //         fileName: '',
+    //         progress: 0,
+    //         status: 'pending',
+    //     }));
 
-        files.forEach((file, index) => {
-            const worker = new Worker(new URL('../../workers/imageConverter.worker.ts', import.meta.url));
+    //     await Promise.all(files.map(async (file, index) => {
+    //         try {
+    //             const convertedFile = await converter.convert(file, {
+    //                 outputFormat: selectedFormat as keyof typeof MagickFormat,
+    //                 quality: 80,
+    //             });
+    //             console.log('Converted file:', convertedFile);
+    //             // Store result in local array
+    //             newResults[index] = {
+    //                 fileName: file.name,
+    //                 result: convertedFile,
+    //                 progress: 100,
+    //                 status: 'success'
+    //             };
+    //         } catch (error: any) {
+    //             setErrors(prevErrors => [...prevErrors, `Conversion failed for ${file.name}.`]);
+    //             console.error('Conversion error:\n\n', error);
+    //             newResults[index] = {
+    //                 fileName: file.name,
+    //                 error: error.message,
+    //                 status: 'error',
+    //                 progress: 0
+    //             };
+    //         }
+    //     }));
 
-            worker.onmessage = (event) => {
-                const { type, progress, result, error } = event.data;
-                setConversionResults(prevResults => {
-                    const newResults = [...prevResults];
-                    if (type === 'progress') {
-                        newResults[index] = { ...newResults[index], progress, status: 'converting' };
-                    } else if (type === 'complete') {
-                        newResults[index] = { ...newResults[index], progress: 100, status: 'success', result };
-                        worker.terminate();
-                    } else if (type === 'error') {
-                        newResults[index] = { ...newResults[index], status: 'error', error };
-                        worker.terminate();
-                    }
-                    return newResults;
+    //     // Update state with all results at once
+    //     setConversionResults(newResults);
+    //     console.log('All conversion results:', newResults);
+
+    //     // Create zip with the direct results array
+    //     const zip = new JSZip();
+    //     let filesAdded = 0;
+
+    //     newResults.forEach((result, index) => {
+    //         if (result && result.status === 'success' && result.result) {
+    //             const file = files[index];
+    //             const newFileName = file.name.replace(/\.[^/.]+$/, `.${selectedFormat}`);
+    //             console.log(`Adding to zip: ${newFileName}`);
+    //             zip.file(newFileName, result.result);
+    //             filesAdded++;
+    //         }
+    //     });
+
+    //     if (filesAdded === 0) {
+    //         setErrors(prevErrors => [...prevErrors, 'No files were successfully converted.']);
+    //         return;
+    //     }
+
+    //     const content = await zip.generateAsync({ type: 'blob' });
+    //     const link = document.createElement('a');
+    //     link.href = URL.createObjectURL(content);
+    //     link.download = `converted_images.${selectedFormat}.zip`;
+    //     document.body.appendChild(link);
+    //     link.click();
+    //     document.body.removeChild(link);
+    //     URL.revokeObjectURL(link.href); // Clean up
+    // };
+    //#endregion
+
+    const startConversion = async () => {
+        setErrors([]);
+        setConversionResults([]);
+
+        const results: FileConversionResult[] = [];
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const newFileName = file.name.replace(/\.[^/.]+$/, `.${selectedFormat}`);
+
+            // Add initial converting state
+            setConversionResults(prevResults => [
+                ...prevResults,
+                { fileName: newFileName, status: 'converting', progress: 0 }
+            ]);
+
+            try {
+                // const convertedBlob = await converter.convert(file, {
+                //     outputFormat: selectedFormat as keyof typeof MagickFormat,
+                //     quality: 80,
+                // });
+                // const convertedBlob = await converter.convert(file, selectedFormat, 80);
+                // console.log('Converted file:', convertedBlob);
+
+                // ----------------------------- testing only -------------------------------------------------
+                // Handle GIF frames separately
+                // let convertedBlob: Blob;
+                // // if (selectedFormat === 'gif') {
+                //     const frames = await extractGIFFrames(file) as Blob[];
+                //     console.log('Extracted frames:', frames);
+                //     const zip = new JSZip();
+                //     frames.forEach((frame, index) => {
+                //         const frameName = `${newFileName.replace(/\.[^/.]+$/, '')}_frame${index + 1}.jpg`;
+                //         zip.file(frameName, frame);
+                //     });
+
+                //     const content = await zip.generateAsync({ type: 'blob' });
+                //     const link = document.createElement('a');
+                //     link.href = URL.createObjectURL(content);
+                //     link.download = `${newFileName.replace(/\.[^/.]+$/, '')}.zip`;
+                //     document.body.appendChild(link);
+                //     link.click();
+                //     document.body.removeChild(link);
+                //     URL.revokeObjectURL(link.href);
+                // } else {
+                // convertedBlob = await converter.convert(file, selectedFormat, 80);
+                // }
+                // ----------------------------- testing only -------------------------------------------------
+
+                // testing convertImages
+                const convertedBlob = await convertImages(file, selectedFormat) as Blob;
+                console.log('Converted file:', convertedBlob);
+
+                results.push({
+                    fileName: newFileName,
+                    result: convertedBlob,  
+                    status: 'success',
+                    progress: 100,
                 });
-            };
 
-            worker.postMessage({ file, targetFormat: selectedFormat });
-        });
-    };
+                setConversionResults([...results]);
+            } catch (error: any) {
+                console.error(`Error converting ${file.name}:`, error);
 
-    const downloadAll = async () => {
-        const zip = new JSZip();
-        conversionResults.forEach((conv) => {
-            if (conv.status === 'success' && conv.result) {
-                const newName = conv.fileName.replace(/\.[^/.]+$/, `.${selectedFormat}`);
-                zip.file(newName, conv.result);
+                results.push({
+                    fileName: newFileName,
+                    error: error.message,
+                    status: 'error',
+                    progress: 0
+                });
+
+                setErrors(prevErrors => [...prevErrors, `Failed to convert ${file.name}: ${error.message}`]);
+                setConversionResults([...results]);
             }
-        });
-        const content = await zip.generateAsync({ type: 'blob' });
-        const url = URL.createObjectURL(content);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `converted_images.zip`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        }
+
+        if (results.some(r => r.status === 'success')) {
+            const zip = new JSZip();
+            results.forEach(result => {
+                if (result.status === 'success' && result.result) {
+                    zip.file(result.fileName, result.result);
+                }
+            });
+
+            const content = await zip.generateAsync({ type: 'blob' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = `converted_images_${selectedFormat}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href); 
+        };
     };
+
 
     return (
         <div className="flex flex-col items-center gap-4">
@@ -147,7 +253,7 @@ const ImagesPage: React.FC = () => {
                 <select
                     id="format-select"
                     value={selectedFormat}
-                    onChange={(e) => setSelectedFormat(e.target.value)}
+                    onChange={(e) => setSelectedFormat(e.target.value as MagickFormat)}
                     className="p-2 rounded"
                 >
                     {outputFormats.map((format) => (
@@ -218,7 +324,7 @@ const ImagesPage: React.FC = () => {
             </div>
 
             {/* Display Conversion Progress */}
-            {conversionResults.length > 0 && (
+            {/* {conversionResults.length > 0 && (
                 <div className="mt-4 w-full max-w-md">
                     <ul className="space-y-2">
                         {conversionResults.map((conv, index) => (
@@ -237,7 +343,7 @@ const ImagesPage: React.FC = () => {
                         ))}
                     </ul>
                 </div>
-            )}
+            )} */}
 
             <div className="flex gap-4 mt-4">
                 <Button
@@ -248,7 +354,7 @@ const ImagesPage: React.FC = () => {
                 >
                     Convert
                 </Button>
-                {conversionResults.some(conv => conv.status === 'success') && (
+                {/* {conversionResults.some(conv => conv.status === 'success') && (
                     <Button
                         onClick={downloadAll}
                         className="bg-blue-500 hover:bg-blue-700 px-4 py-3 rounded-sm cursor-pointer transition duration-300 ease-in-out"
@@ -256,7 +362,7 @@ const ImagesPage: React.FC = () => {
                     >
                         Download All
                     </Button>
-                )}
+                )} */}
                 <Button
                     onClick={handleClearFiles}
                     className="bg-gray-500 hover:bg-gray-700 px-4 py-3 rounded-sm cursor-pointer transition duration-300 ease-in-out"
@@ -265,6 +371,29 @@ const ImagesPage: React.FC = () => {
                     Clear
                 </Button>
             </div>
+
+            {/* lets populate the converted images in the UI */}
+            {conversionResults.length > 0 && (
+                <div className="mt-4 w-full max-w-md">
+                    <ul className="space-y-2">
+                        {conversionResults.map((conv, index) => (
+                            <li key={index} className="bg-gray-800 p-2 rounded flex flex-col">
+                                <div className="flex justify-between items-center">
+                                    <span>{conv.fileName}</span>
+                                    {conv.status === 'error' && <span className="text-red-500">{conv.error}</span>}
+                                </div>
+                                {conv.result && (
+                                    <img
+                                        src={URL.createObjectURL(conv.result)}
+                                        alt={`Converted ${conv.fileName}`}
+                                        className="mt-2"
+                                    />
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
         </div>
     );
 };

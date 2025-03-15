@@ -7,7 +7,7 @@ const MorphicBackground = () => {
     useEffect(() => {
         anime({
             targets: '.float-circle',
-            translateY: [-15, 15], // Soft floating motion
+            translateY: [-15, 15], 
             duration: 4000,
             easing: 'easeInOutSine',
             direction: 'alternate',
