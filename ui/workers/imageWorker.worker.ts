@@ -1,17 +1,8 @@
 /// <reference lib="webworker" />
 
-import { initializeImageMagick, ImageMagick, MagickFormat } from '@imagemagick/magick-wasm';
+import { initializeImageMagick, ImageMagick } from '@imagemagick/magick-wasm';
 
 let initialized = false;
-const formatMapping: Record<string, MagickFormat> = {
-    jpg: MagickFormat.Jpeg,
-    jpeg: MagickFormat.Jpeg,
-    png: MagickFormat.Png,
-    gif: MagickFormat.Gif,
-    bmp: MagickFormat.Bmp,
-    tiff: MagickFormat.Tiff,
-    webp: MagickFormat.WebP,
-};
 
 self.onmessage = async (event) => {
     const { id, buffer, outputFormat, quality } = event.data;
@@ -23,18 +14,14 @@ self.onmessage = async (event) => {
             initialized = true;
         }
 
-        console.log(buffer);
+        const data = new Uint8Array(buffer);
+        ImageMagick.read(data, (image) => {
 
-        ImageMagick.read(new Uint8Array(buffer), (image) => {
-            image.format = formatMapping[outputFormat.toLowerCase()];
-            image.quality = quality || 80;
-            image.strip(); 
+            if (quality) image.quality = quality;
 
-            console.log('testing - ', image);
-
-            image.write((result) => {
-                const transferableBuffer = result.buffer.slice(0); 
-                self.postMessage({ id, result: transferableBuffer }, [transferableBuffer]);
+            image.write((data) => {
+                const blob = new Blob([data], { type: `image/${outputFormat}` });
+                self.postMessage({ id, result: blob });
             });
         });
     } catch (error) {
