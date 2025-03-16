@@ -31,7 +31,7 @@ const MorphicBackground = () => {
             {/* Top Right Circles */}
             <div className="absolute top-0 right-0">
                 {/* Solid Circle */}
-                <div className="float-circle absolute -top-12 -right-12 w-72 h-72 bg-orange-500 opacity-20 rounded-full" />
+                <div className="float-circle absolute -top-12 -right-12 w-72 h-72 bg-orange-500 opacity-80 rounded-full" />
 
                 {/* Glassmorphic Circle - FIXED */}
                 <div className="float-circle absolute top-16 right-20 w-56 h-56 rounded-full 

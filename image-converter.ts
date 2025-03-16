@@ -3,6 +3,11 @@
 import { MagickFormat } from '@imagemagick/magick-wasm';
 import WorkerLoader from 'worker-loader!../workers/imageWorker.worker.ts';
 
+type ConversionOptions = {
+    outputFormat: keyof typeof MagickFormat;
+    quality?: number;
+};
+
 class ImageConverter {
     private worker: Worker = null as unknown as Worker;
 
@@ -12,7 +17,7 @@ class ImageConverter {
         }
     }
 
-    convert(file: File, outputFormat: MagickFormat, quality = 80): Promise<Blob> {
+    convert(file: File, outputFormat: string, quality = 80): Promise<Blob> {
         return new Promise((resolve, reject) => {
             const messageId = `${Date.now()}-${Math.random()}`;
 
@@ -24,7 +29,7 @@ class ImageConverter {
                 if (e.data.error) {
                     reject(new Error(e.data.error));
                 } else {
-                    resolve(e.data.result);
+                    resolve(new Blob([e.data.result], { type: `image/${outputFormat}` }));
                 }
             };
 
@@ -32,14 +37,13 @@ class ImageConverter {
 
             this.worker.addEventListener('message', handleMessage);
 
-            file.arrayBuffer()
-                .then(buffer => {
-                    this.worker.postMessage({ id: messageId, buffer, outputFormat, quality });
-                })
-                .catch(err => {
-                    this.worker.removeEventListener('message', handleMessage);
-                    reject(err);
-                });
+            file.arrayBuffer().then(buffer => {
+                this.worker.postMessage({ id: messageId, buffer, outputFormat, quality });
+            })
+            .catch(err => {
+                this.worker.removeEventListener('message', handleMessage);
+                reject(err);
+            });
         });
     }
 

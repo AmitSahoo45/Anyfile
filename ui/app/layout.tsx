@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Bebas_Neue, Montserrat } from "next/font/google";
 import "./globals.css";
 import { MorphicBackground, Navbar } from "./components";
+import { Toaster } from "react-hot-toast";
 
 const bebasNeue = Bebas_Neue({
   weight: "400",
@@ -35,6 +36,7 @@ export default function RootLayout({
         <main className="pt-[110px]">
           {children}
         </main>
+        <Toaster position="bottom-left" />
       </body>
     </html>
   );

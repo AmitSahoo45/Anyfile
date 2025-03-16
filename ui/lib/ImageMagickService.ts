@@ -57,7 +57,7 @@ export async function convertImages(file: File, format: MagickFormat) {
             image.format = format
 
             image.write(data => {
-                const blob = new Blob([data], { type: 'image/jpeg' })
+                const blob = new Blob([data], { type: `image/${format}` })
                 resolve(blob)
             })
         })

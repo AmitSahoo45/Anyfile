@@ -22,3 +22,12 @@ interface FileConversionResult {
     result?: Blob;
     error?: string;
 }
+
+interface FormatSelectorProps {
+    selectedFormat: MagickFormat;
+    setSelectedFormat: (format: MagickFormat) => void;
+}
+
+interface SplashScreenProps {
+    onAnimationComplete: () => void;
+}

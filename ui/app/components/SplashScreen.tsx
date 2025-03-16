@@ -3,10 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import anime from 'animejs';
 
-interface SplashScreenProps {
-    onAnimationComplete: () => void;
-}
-
 const greetings = ["Hello", "नमस्ते", "Bienvenido", "Bonjour", "Ciao"];
 
 const SplashScreen: React.FC<SplashScreenProps> = ({ onAnimationComplete }) => {

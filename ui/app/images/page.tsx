@@ -6,52 +6,59 @@ import { CheckCircleIcon, ExclamationTriangleIcon, XMarkIcon } from '@heroicons/
 import { Button } from '@headlessui/react';
 import ImageConverter from '@/lib/image-converter';
 import JSZip from 'jszip';
+import toast from 'react-hot-toast';
 
 import { MAX_FILES, MAX_FILE_SIZE_MB } from '@/constants';
 import { MagickFormat } from '@imagemagick/magick-wasm';
-import Error from 'next/error';
-import { convertImages, extractGIFFrames } from '@/lib/ImageMagickService';
+import { FormatSelector } from '../components';
+// import { convertImages, extractGIFFrames } from '@/lib/ImageMagickService';
 
 const ImagesPage: React.FC = () => {
     const [errors, setErrors] = useState<string[]>([]);
     const [files, setFiles] = useState<File[]>([]);
     const [selectedFormat, setSelectedFormat] = useState<MagickFormat>(MagickFormat.Jpg);
     const [conversionResults, setConversionResults] = useState<FileConversionResult[]>([]);
-    const outputFormats = ['jpg', 'png', 'gif', 'bmp', 'tiff', 'webp'];
     const [converter] = useState(() => new ImageConverter());
 
-    const onDrop = useCallback(
-        (acceptedFiles: File[], fileRejections: FileRejection[], event: DropEvent) => {
-            const newErrors: string[] = [];
+    const onDrop = useCallback((acceptedFiles: File[], fileRejections: FileRejection[], event: DropEvent) => {
+        const newErrors: string[] = [];
 
+        if (fileRejections.length > 0) {
+            toast.error(`${fileRejections.length} file(s) couldn't be accepted`);
             fileRejections.forEach(({ file, errors: fileErrors }) => {
                 fileErrors.forEach(err => {
                     newErrors.push(`File ${file.name}: ${err.message}`);
                 });
             });
+        }
 
-            const validFiles = acceptedFiles.filter(file => {
-                if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-                    newErrors.push(`File ${file.name} is too large.`);
-                    return false;
-                }
-                return true;
-            });
-
-            if (validFiles.length + files.length > MAX_FILES) {
-                newErrors.push(`You can only upload up to ${MAX_FILES} images.`);
-            } else {
-                setFiles(prevFiles => [...prevFiles, ...validFiles]);
+        const validFiles = acceptedFiles.filter(file => {
+            if (file.size > MAX_FILE_SIZE_MB) {
+                newErrors.push(`File ${file.name} is too large.`);
+                return false;
             }
-            setErrors(newErrors);
-        },
-        [files]
-    );
+            return true;
+        });
+
+        if (validFiles.length + files.length > MAX_FILES)
+            toast.error(`You can only upload up to ${MAX_FILES} images at once.`);
+        else if (validFiles.length > 0) {
+            setFiles(prevFiles => [...prevFiles, ...validFiles]);
+            toast.success(`Added ${validFiles.length} image(s)`);
+        }
+
+        const oversizedFiles = acceptedFiles.filter(file => file.size > MAX_FILE_SIZE_MB);
+        if (oversizedFiles.length > 0)
+            toast.error(`${oversizedFiles.length} file(s) exceed the 5MB limit`);
+
+        setErrors(newErrors);
+    }, [files]);
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
         accept: {
             'image/jpeg': [],
+            'image/jpg': [],
             'image/png': [],
             'image/gif': [],
             'image/bmp': [],
@@ -71,130 +78,27 @@ const ImagesPage: React.FC = () => {
         setErrors([]);
     };
 
-    //#region Conversion Logic
-    // const startConversion = async () => {
-    //     const newResults: FileConversionResult[] = Array(files.length).fill(null).map(() => ({
-    //         fileName: '',
-    //         progress: 0,
-    //         status: 'pending',
-    //     }));
-
-    //     await Promise.all(files.map(async (file, index) => {
-    //         try {
-    //             const convertedFile = await converter.convert(file, {
-    //                 outputFormat: selectedFormat as keyof typeof MagickFormat,
-    //                 quality: 80,
-    //             });
-    //             console.log('Converted file:', convertedFile);
-    //             // Store result in local array
-    //             newResults[index] = {
-    //                 fileName: file.name,
-    //                 result: convertedFile,
-    //                 progress: 100,
-    //                 status: 'success'
-    //             };
-    //         } catch (error: any) {
-    //             setErrors(prevErrors => [...prevErrors, `Conversion failed for ${file.name}.`]);
-    //             console.error('Conversion error:\n\n', error);
-    //             newResults[index] = {
-    //                 fileName: file.name,
-    //                 error: error.message,
-    //                 status: 'error',
-    //                 progress: 0
-    //             };
-    //         }
-    //     }));
-
-    //     // Update state with all results at once
-    //     setConversionResults(newResults);
-    //     console.log('All conversion results:', newResults);
-
-    //     // Create zip with the direct results array
-    //     const zip = new JSZip();
-    //     let filesAdded = 0;
-
-    //     newResults.forEach((result, index) => {
-    //         if (result && result.status === 'success' && result.result) {
-    //             const file = files[index];
-    //             const newFileName = file.name.replace(/\.[^/.]+$/, `.${selectedFormat}`);
-    //             console.log(`Adding to zip: ${newFileName}`);
-    //             zip.file(newFileName, result.result);
-    //             filesAdded++;
-    //         }
-    //     });
-
-    //     if (filesAdded === 0) {
-    //         setErrors(prevErrors => [...prevErrors, 'No files were successfully converted.']);
-    //         return;
-    //     }
-
-    //     const content = await zip.generateAsync({ type: 'blob' });
-    //     const link = document.createElement('a');
-    //     link.href = URL.createObjectURL(content);
-    //     link.download = `converted_images.${selectedFormat}.zip`;
-    //     document.body.appendChild(link);
-    //     link.click();
-    //     document.body.removeChild(link);
-    //     URL.revokeObjectURL(link.href); // Clean up
-    // };
-    //#endregion
-
     const startConversion = async () => {
+        toast.loading('Converting images...');
         setErrors([]);
         setConversionResults([]);
 
         const results: FileConversionResult[] = [];
-
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             const newFileName = file.name.replace(/\.[^/.]+$/, `.${selectedFormat}`);
 
-            // Add initial converting state
             setConversionResults(prevResults => [
                 ...prevResults,
                 { fileName: newFileName, status: 'converting', progress: 0 }
             ]);
 
             try {
-                // const convertedBlob = await converter.convert(file, {
-                //     outputFormat: selectedFormat as keyof typeof MagickFormat,
-                //     quality: 80,
-                // });
-                // const convertedBlob = await converter.convert(file, selectedFormat, 80);
-                // console.log('Converted file:', convertedBlob);
-
-                // ----------------------------- testing only -------------------------------------------------
-                // Handle GIF frames separately
-                // let convertedBlob: Blob;
-                // // if (selectedFormat === 'gif') {
-                //     const frames = await extractGIFFrames(file) as Blob[];
-                //     console.log('Extracted frames:', frames);
-                //     const zip = new JSZip();
-                //     frames.forEach((frame, index) => {
-                //         const frameName = `${newFileName.replace(/\.[^/.]+$/, '')}_frame${index + 1}.jpg`;
-                //         zip.file(frameName, frame);
-                //     });
-
-                //     const content = await zip.generateAsync({ type: 'blob' });
-                //     const link = document.createElement('a');
-                //     link.href = URL.createObjectURL(content);
-                //     link.download = `${newFileName.replace(/\.[^/.]+$/, '')}.zip`;
-                //     document.body.appendChild(link);
-                //     link.click();
-                //     document.body.removeChild(link);
-                //     URL.revokeObjectURL(link.href);
-                // } else {
-                // convertedBlob = await converter.convert(file, selectedFormat, 80);
-                // }
-                // ----------------------------- testing only -------------------------------------------------
-
-                // testing convertImages
-                const convertedBlob = await convertImages(file, selectedFormat) as Blob;
-                console.log('Converted file:', convertedBlob);
+                const convertedBlob = await converter.convert(file, selectedFormat);
 
                 results.push({
                     fileName: newFileName,
-                    result: convertedBlob,  
+                    result: convertedBlob,
                     status: 'success',
                     progress: 100,
                 });
@@ -214,13 +118,16 @@ const ImagesPage: React.FC = () => {
                 setConversionResults([...results]);
             }
         }
+        toast.dismiss();
+        toast.success('Conversion completed!');
+    };
 
-        if (results.some(r => r.status === 'success')) {
+    const downloadAll = async () => {
+        if (conversionResults.some(r => r.status === 'success')) {
             const zip = new JSZip();
-            results.forEach(result => {
-                if (result.status === 'success' && result.result) {
+            conversionResults.forEach(result => {
+                if (result.status === 'success' && result.result)
                     zip.file(result.fileName, result.result);
-                }
             });
 
             const content = await zip.generateAsync({ type: 'blob' });
@@ -230,9 +137,9 @@ const ImagesPage: React.FC = () => {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            URL.revokeObjectURL(link.href); 
+            URL.revokeObjectURL(link.href);
         };
-    };
+    }
 
 
     return (
@@ -250,18 +157,10 @@ const ImagesPage: React.FC = () => {
                 <label htmlFor="format-select" className="text-white">
                     Convert to:
                 </label>
-                <select
-                    id="format-select"
-                    value={selectedFormat}
-                    onChange={(e) => setSelectedFormat(e.target.value as MagickFormat)}
-                    className="p-2 rounded"
-                >
-                    {outputFormats.map((format) => (
-                        <option key={format} value={format}>
-                            {format.toUpperCase()}
-                        </option>
-                    ))}
-                </select>
+                <FormatSelector 
+                    selectedFormat={selectedFormat} 
+                    setSelectedFormat={setSelectedFormat} 
+                />
             </div>
 
             <div
@@ -292,17 +191,6 @@ const ImagesPage: React.FC = () => {
                     <p className="text-gray-300">Drag & drop images here, or click to select files</p>
                 )}
             </div>
-
-
-            {errors.length > 0 && (
-                <div className="mt-2 space-y-1">
-                    {errors.map((err, index) => (
-                        <p key={index} className="text-red-500 text-sm text-center">
-                            {err}
-                        </p>
-                    ))}
-                </div>
-            )}
 
             {/* Display Uploaded Files */}
             <div className="mt-4">
@@ -350,19 +238,20 @@ const ImagesPage: React.FC = () => {
                     onClick={startConversion}
                     className="bg-orange-500 hover:bg-orange-700 px-4 py-3 rounded-sm cursor-pointer transition duration-300 ease-in-out disabled:bg-gray-400 disabled:cursor-not-allowed"
                     aria-label="Convert files"
-                    disabled={files.length === 0 || errors.length > 0 || files.length > MAX_FILES}
+                    disabled={files.length === 0 || conversionResults.some(conv => conv.status === 'converting')}
                 >
                     Convert
                 </Button>
-                {/* {conversionResults.some(conv => conv.status === 'success') && (
+                {conversionResults.some(conv => conv.status === 'success') && (
                     <Button
                         onClick={downloadAll}
-                        className="bg-blue-500 hover:bg-blue-700 px-4 py-3 rounded-sm cursor-pointer transition duration-300 ease-in-out"
+                        className="bg-blue-500 hover:bg-blue-700 px-4 py-3 rounded-sm cursor-pointer transition duration-300 ease-in-out disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        disabled={conversionResults.length === 0}
                         aria-label="Download all converted files in ZIP"
                     >
                         Download All
                     </Button>
-                )} */}
+                )}
                 <Button
                     onClick={handleClearFiles}
                     className="bg-gray-500 hover:bg-gray-700 px-4 py-3 rounded-sm cursor-pointer transition duration-300 ease-in-out"
@@ -372,28 +261,6 @@ const ImagesPage: React.FC = () => {
                 </Button>
             </div>
 
-            {/* lets populate the converted images in the UI */}
-            {conversionResults.length > 0 && (
-                <div className="mt-4 w-full max-w-md">
-                    <ul className="space-y-2">
-                        {conversionResults.map((conv, index) => (
-                            <li key={index} className="bg-gray-800 p-2 rounded flex flex-col">
-                                <div className="flex justify-between items-center">
-                                    <span>{conv.fileName}</span>
-                                    {conv.status === 'error' && <span className="text-red-500">{conv.error}</span>}
-                                </div>
-                                {conv.result && (
-                                    <img
-                                        src={URL.createObjectURL(conv.result)}
-                                        alt={`Converted ${conv.fileName}`}
-                                        className="mt-2"
-                                    />
-                                )}
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
         </div>
     );
 };
