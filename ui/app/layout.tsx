@@ -4,6 +4,8 @@ import "./globals.css";
 import { MorphicBackground, Navbar } from "./components";
 import { Toaster } from "react-hot-toast";
 
+import { Analytics } from "@vercel/analytics/react"
+
 const bebasNeue = Bebas_Neue({
   weight: "400",
   variable: "--font-bebas-neue",
@@ -37,6 +39,7 @@ export default function RootLayout({
           {children}
         </main>
         <Toaster position="bottom-left" />
+        <Analytics />
       </body>
     </html>
   );
