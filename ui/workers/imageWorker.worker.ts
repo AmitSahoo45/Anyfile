@@ -25,7 +25,6 @@ self.onmessage = async (event) => {
             });
         });
     } catch (error) {
-        console.error('Error in worker:', error);
-        self.postMessage({ error: 'Conversion Error' });
+        self.postMessage({ id, error: 'Conversion Error' });
     }
 };

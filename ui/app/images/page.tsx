@@ -16,15 +16,14 @@ const ImagesPage: React.FC = () => {
     const [files, setFiles] = useState<File[]>([]);
     const [selectedFormat, setSelectedFormat] = useState<MagickFormat>(MagickFormat.Jpg);
     const [conversionResults, setConversionResults] = useState<FileConversionResult[]>([]);
-    const [converter] = useState(() => new ImageConverter());
     const [previews, setPreviews] = useState<string[]>([]);
+    const [isDownloadable, setIsDownloadable] = useState<boolean>(false);
+    const [converter] = useState(() => new ImageConverter());
 
-    // Generate image previews when files change
     useEffect(() => {
         const newPreviews = files.map(file => URL.createObjectURL(file));
         setPreviews(newPreviews);
 
-        // Clean up the object URLs when unmounting
         return () => {
             newPreviews.forEach(preview => URL.revokeObjectURL(preview));
         };
@@ -58,7 +57,9 @@ const ImagesPage: React.FC = () => {
             return true;
         });
 
-        if (validFiles.length + files.length > MAX_FILES) {
+        const remainingSlots = MAX_FILES - files.length;
+
+        if (remainingSlots <= 0) {
             toast.error(`You can only upload up to ${MAX_FILES} images at once.`, {
                 icon: '⚠️',
                 style: {
@@ -67,16 +68,31 @@ const ImagesPage: React.FC = () => {
                     border: '1px solid #F59E0B',
                 },
             });
-        } else if (validFiles.length > 0) {
-            setFiles(prevFiles => [...prevFiles, ...validFiles]);
-            toast.success(`Added ${validFiles.length} image(s)`, {
-                icon: '✅',
-                style: {
-                    background: '#D1FAE5',
-                    color: '#065F46',
-                    border: '1px solid #10B981',
-                },
-            });
+        } else {
+            const filesToAdd = validFiles.slice(0, remainingSlots);
+
+            if (filesToAdd.length > 0) {
+                setFiles(prevFiles => [...prevFiles, ...filesToAdd]);
+                toast.success(`Added ${filesToAdd.length} image(s)`, {
+                    icon: '✅',
+                    style: {
+                        background: '#D1FAE5',
+                        color: '#065F46',
+                        border: '1px solid #10B981',
+                    },
+                });
+            }
+
+            if (filesToAdd.length < validFiles.length) {
+                toast.error(`Could only add ${filesToAdd.length} of ${validFiles.length} files due to the ${MAX_FILES} file limit`, {
+                    icon: '⚠️',
+                    style: {
+                        background: '#FEF3C7',
+                        color: '#92400E',
+                        border: '1px solid #F59E0B',
+                    },
+                });
+            }
         }
 
         const oversizedFiles = acceptedFiles.filter(file => file.size > MAX_FILE_SIZE_MB * 1024 * 1024);
@@ -117,12 +133,12 @@ const ImagesPage: React.FC = () => {
     };
 
     const handleClearFiles = () => {
-        // Clean up preview URLs
         previews.forEach(preview => URL.revokeObjectURL(preview));
         setPreviews([]);
         setFiles([]);
         setConversionResults([]);
         setErrors([]);
+        setIsDownloadable(false);
     };
 
     const startConversion = async () => {
@@ -142,14 +158,12 @@ const ImagesPage: React.FC = () => {
             const file = files[i];
             const newFileName = file.name.replace(/\.[^/.]+$/, `.${selectedFormat.toLowerCase()}`);
 
-            // Update progress for this file
             setConversionResults(prevResults => [
                 ...prevResults,
                 { fileName: newFileName, status: 'converting', progress: 0 }
             ]);
 
             try {
-                // Show progress update in toast
                 toast.loading(`Converting ${i + 1}/${files.length}: ${file.name}`, {
                     id: toastId,
                 });
@@ -190,6 +204,7 @@ const ImagesPage: React.FC = () => {
                     border: '1px solid #10B981',
                 },
             });
+            setIsDownloadable(true);
         } else if (results.some(r => r.status === 'error')) {
             toast.error(`${results.filter(r => r.status === 'error').length} file(s) failed to convert`, {
                 icon: '⚠️',
@@ -250,34 +265,50 @@ const ImagesPage: React.FC = () => {
         }
     };
 
+    const downloadIndividualFile = (result: FileConversionResult) => {
+        if (result.status === 'success' && result.result) {
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(result.result);
+            link.download = result.fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+
+            toast.success(`Downloaded ${result.fileName}`, {
+                icon: '📥',
+                style: {
+                    background: '#D1FAE5',
+                    color: '#065F46',
+                    border: '1px solid #10B981',
+                },
+            });
+        }
+    };
 
     return (
         <div className="relative min-h-screen">
-            {/* Semi-transparent background circles for visual interest but less opacity */}
             <div className="absolute top-0 right-0 w-72 h-72 bg-orange-500 rounded-full filter blur-3xl opacity-20 z-0"></div>
             <div className="absolute bottom-0 left-0 w-72 h-72 bg-orange-500 rounded-full filter blur-3xl opacity-20 z-0"></div>
 
-            <div className="container mx-auto px-4 py-8 relative z-10">
-                <header className="mb-8 flex flex-col items-center gap-4">
-                    <h1 className="text-4xl font-bold text-center mb-8">Let's play with images</h1>
+            <div className="container mx-auto px-4 py-6 md:py-8 relative z-10">
+                <header className="mb-6 md:mb-8 flex flex-col items-center gap-3 md:gap-4">
+                    <h1 className="text-3xl md:text-4xl font-bold text-center mb-4 md:mb-8">Let's play with images</h1>
 
-                    <div className="text-sm text-yellow-400 bg-yellow-900/30 p-3 rounded-lg flex items-center gap-2">
-                        {/* text-sm text-yellow-400 bg-yellow-900/30 p-3 rounded-lg flex items-center gap-2 */}
-                        {/* bg-amber-900/20 border border-amber-500/50 text-amber-200 p-3 rounded-lg mb-6 flex items-center w-full gap-2 */}
-                        <ExclamationTriangleIcon className="h-5 w-5 text-amber-500" />
+                    <div className="text-xs md:text-sm text-yellow-400 bg-yellow-900/30 p-2 md:p-3 rounded-lg flex items-center gap-2 w-full max-w-md">
+                        <ExclamationTriangleIcon className="h-4 w-4 md:h-5 md:w-5 flex-shrink-0 text-amber-500" />
                         <span>Each file must be less than {MAX_FILE_SIZE_MB}MB. Maximum {MAX_FILES} images allowed.</span>
                     </div>
                 </header>
 
-                {/* Conversion controls - grouped together */}
-                <div className="bg-gray-800/30 backdrop-blur-sm p-6 rounded-xl mb-6 w-fit mx-auto">
+                <div className="bg-gray-800/30 backdrop-blur-sm p-4 md:p-6 rounded-xl mb-6 w-full max-w-md mx-auto">
                     <div className="flex flex-col items-center gap-2 text-center mb-4">
                         <label className="text-white font-medium">Convert to:</label>
-                        <div className="format-selector-container">
+                        <div className="format-selector-container w-full">
                             <select
                                 value={selectedFormat}
                                 onChange={(e) => setSelectedFormat(e.target.value as MagickFormat)}
-                                className="p-3 rounded-lg bg-white/10 border border-white/30 text-white font-medium focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                                className="p-2 md:p-3 rounded-lg bg-white/10 border border-white/30 text-white font-medium focus:ring-2 focus:ring-orange-500 focus:border-transparent w-full"
                             >
                                 <option className='bg-black/45' value={MagickFormat.Jpg}>JPG - Joint Photographic Experts Group</option>
                                 <option className='bg-black/45' value={MagickFormat.Png}>PNG - Portable Network Graphics</option>
@@ -290,7 +321,7 @@ const ImagesPage: React.FC = () => {
                     </div>
 
                     {/* Format description */}
-                    <div className="text-white/70 text-sm mb-2">
+                    <div className="text-white/70 text-xs md:text-sm mb-2 text-center">
                         {selectedFormat === MagickFormat.Jpg && "Best for photographs and complex images with many colors."}
                         {selectedFormat === MagickFormat.Png && "Ideal for images with transparency and sharp details."}
                         {selectedFormat === MagickFormat.Gif && "Perfect for simple animations and images with limited colors."}
@@ -300,25 +331,24 @@ const ImagesPage: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Dropzone with improved visuals */}
                 <div
                     {...getRootProps()}
-                    className={`border-2 border-dashed rounded-xl p-12 text-center transition-all cursor-pointer mb-6 
+                    className={`border-2 border-dashed rounded-xl p-4 md:p-12 text-center transition-all cursor-pointer mb-6 
                 ${isDragActive
                             ? 'border-orange-400 bg-orange-500/20'
                             : 'border-gray-400 hover:border-orange-400 hover:bg-orange-500/10'}`}
                 >
                     <input {...getInputProps()} />
-                    <div className="flex flex-col items-center gap-4">
-                        <div className="w-16 h-16 rounded-full bg-orange-500/20 flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-3 md:gap-4">
+                        <div className="w-12 h-12 md:w-16 md:h-16 rounded-full bg-orange-500/20 flex items-center justify-center">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
                         </div>
-                        <p className="text-xl font-medium text-white">
+                        <p className="text-lg md:text-xl font-medium text-white">
                             {isDragActive ? 'Drop the files here ...' : 'Drag & drop images here, or click to select files'}
                         </p>
-                        <p className="text-gray-400 text-sm">
+                        <p className="text-gray-400 text-xs md:text-sm">
                             Supports JPG, PNG, GIF, BMP, TIFF, WEBP, and HEIC formats
                         </p>
                     </div>
@@ -327,8 +357,8 @@ const ImagesPage: React.FC = () => {
                 {/* Image previews and file list */}
                 {files.length > 0 && (
                     <div className="mb-6">
-                        <h2 className="text-xl font-bold text-white mb-4">Selected Images ({files.length})</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                        <h2 className="text-lg md:text-xl font-bold text-white mb-3 md:mb-4">Selected Images ({files.length})</h2>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-4">
                             {files.map((file, index) => (
                                 <div key={index} className="relative bg-gray-800/50 rounded-lg overflow-hidden border border-gray-700 group">
                                     <div className="aspect-square overflow-hidden bg-gray-900/50">
@@ -338,8 +368,8 @@ const ImagesPage: React.FC = () => {
                                             className="w-full h-full object-contain"
                                         />
                                     </div>
-                                    <div className="p-3">
-                                        <p className="text-white text-sm font-medium truncate" title={file.name}>
+                                    <div className="p-2 md:p-3">
+                                        <p className="text-white text-xs md:text-sm font-medium truncate" title={file.name}>
                                             {file.name}
                                         </p>
                                         <p className="text-gray-400 text-xs">
@@ -348,10 +378,11 @@ const ImagesPage: React.FC = () => {
                                     </div>
                                     <button
                                         onClick={() => handleRemoveFile(index)}
-                                        className="absolute top-2 right-2 bg-red-500/80 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        className="absolute top-1 right-1 md:top-2 md:right-2 bg-red-500/80 hover:bg-red-600 text-white rounded-full p-1 
+                                        md:opacity-0 md:group-hover:opacity-100 transition-opacity"
                                         aria-label="Remove file"
                                     >
-                                        <XMarkIcon className="h-5 w-5" />
+                                        <XMarkIcon className="h-4 w-4 md:h-5 md:w-5" />
                                     </button>
                                 </div>
                             ))}
@@ -361,31 +392,40 @@ const ImagesPage: React.FC = () => {
 
                 {/* Conversion progress */}
                 {conversionResults.length > 0 && (
-                    <div className="mb-6 bg-gray-800/30 backdrop-blur-sm p-4 rounded-xl">
-                        <h2 className="text-xl font-bold text-white mb-4">Conversion Progress</h2>
-                        <div className="space-y-3">
+                    <div className="mb-6 bg-gray-800/30 backdrop-blur-sm p-3 md:p-4 rounded-xl">
+                        <h2 className="text-lg md:text-xl font-bold text-white mb-3 md:mb-4">Conversion Progress</h2>
+                        <div className="space-y-2 md:space-y-3">
                             {conversionResults.map((conv, index) => (
-                                <div key={index} className="flex items-center gap-3 p-3 rounded-lg bg-gray-800/50">
-                                    {conv.status === 'success' && <CheckCircleIcon className="h-5 w-5 text-green-500" />}
-                                    {conv.status === 'error' && <ExclamationTriangleIcon className="h-5 w-5 text-red-500" />}
+                                <div key={index} className="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg bg-gray-800/50">
+                                    {conv.status === 'success' && <CheckCircleIcon className="h-4 w-4 md:h-5 md:w-5 text-green-500 flex-shrink-0" />}
+                                    {conv.status === 'error' && <ExclamationTriangleIcon className="h-4 w-4 md:h-5 md:w-5 text-red-500 flex-shrink-0" />}
                                     {conv.status === 'converting' && (
-                                        <div className="h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                                        <div className="h-4 w-4 md:h-5 md:w-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
                                     )}
 
-                                    <div className="flex-1">
-                                        <p className="text-white font-medium">{conv.fileName}</p>
-                                        {conv.status === 'error' && <p className="text-red-400 text-sm">{conv.error}</p>}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-white text-xs md:text-sm font-medium truncate">{conv.fileName}</p>
+                                        {conv.status === 'error' && <p className="text-red-400 text-xs truncate">{conv.error}</p>}
                                     </div>
 
-                                    <div className="w-24">
+                                    <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
                                         {conv.status === 'converting' ? (
-                                            <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                                            <div className="h-2 w-12 md:w-24 bg-gray-700 rounded-full overflow-hidden">
                                                 <div className="h-full bg-blue-500 animate-pulse"></div>
                                             </div>
                                         ) : conv.status === 'success' ? (
-                                            <span className="text-green-500 text-sm">Completed</span>
+                                            <>
+                                                <span className="text-green-500 text-xs md:text-sm mr-1 md:mr-2 hidden sm:inline">Completed</span>
+                                                <button
+                                                    onClick={() => downloadIndividualFile(conv)}
+                                                    className="p-1 rounded-lg bg-green-600 hover:bg-green-700 text-white cursor-pointer"
+                                                    title="Download this file"
+                                                >
+                                                    <ArrowDownTrayIcon className="h-3 w-3 md:h-4 md:w-4" />
+                                                </button>
+                                            </>
                                         ) : (
-                                            <span className="text-red-500 text-sm">Failed</span>
+                                            <span className="text-red-500 text-xs md:text-sm">Failed</span>
                                         )}
                                     </div>
                                 </div>
@@ -395,11 +435,11 @@ const ImagesPage: React.FC = () => {
                 )}
 
                 {/* Action buttons */}
-                <div className="flex flex-wrap gap-4 justify-center">
+                <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4 justify-center">
                     <button
                         onClick={startConversion}
                         disabled={files.length === 0 || conversionResults.some(conv => conv.status === 'converting')}
-                        className="px-6 py-3 rounded-lg bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-bold transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 md:px-6 py-2 md:py-3 rounded-lg bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-bold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -410,16 +450,16 @@ const ImagesPage: React.FC = () => {
                     {conversionResults.some(conv => conv.status === 'success') && (
                         <button
                             onClick={downloadAll}
-                            className="px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 active:bg-green-800 text-white font-bold transition flex items-center gap-2"
-                        >
-                            <ArrowDownTrayIcon className="h-5 w-5" />
-                            Download All
+                            className="px-4 md:px-6 py-2 md:py-3 rounded-lg bg-gray-600 hover:bg-gray-700 active:bg-gray-800 text-white font-bold transition flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
+                            >
+                                <XMarkIcon className="h-4 w-4 md:h-5 md:w-5" />
+                            Download All (ZIP)
                         </button>
                     )}
 
                     <button
                         onClick={handleClearFiles}
-                        className="px-6 py-3 rounded-lg bg-gray-600 hover:bg-gray-700 active:bg-gray-800 text-white font-bold transition flex items-center gap-2"
+                        className="px-6 py-3 rounded-lg bg-gray-600 hover:bg-gray-700 active:bg-gray-800 text-white font-bold transition flex items-center gap-2 cursor-pointer"
                     >
                         <XMarkIcon className="h-5 w-5" />
                         Clear
