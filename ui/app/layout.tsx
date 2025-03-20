@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Bebas_Neue, Montserrat } from "next/font/google";
 import "./globals.css";
-import { Footer, MorphicBackground, Navbar } from "./components";
+import { MorphicBackground, Navbar } from "./components";
 import { Toaster } from "react-hot-toast";
 
 import { Analytics } from "@vercel/analytics/react"
@@ -75,7 +75,6 @@ export default function RootLayout({
           <main className="pt-[110px]">
             {children}
           </main>
-          <Footer />
           <Toaster position="bottom-left" />
           <Analytics />
         </body>
