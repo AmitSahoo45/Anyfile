@@ -295,7 +295,7 @@ const ImagesPage: React.FC = () => {
                     <h1 className="text-3xl md:text-4xl font-bold text-center mb-4">Free Online Image Converter</h1>
                     <p className="text-gray-400 text-[10px] md:text-base text-center max-w-md">
                         Easily convert between JPG, PNG, GIF, BMP, TIFF, WEBP, and HEIC formats. Fast, secure, and completely private.
-                        All conversions take place on the UI side, so your files are never uploaded to our servers. 👄
+                        All conversions take place on the UI side, so your files are never uploaded to our servers. 🚀
                     </p>
 
                     <div className="text-xs md:text-sm text-yellow-400 bg-yellow-900/30 p-2 md:p-3 rounded-lg flex items-center gap-2 w-full max-w-md">
@@ -468,6 +468,22 @@ const ImagesPage: React.FC = () => {
                         Clear
                     </button>
                 </div>
+
+                <section className='mt-8'>
+                    <h2 className='text-xl md:text-2xl font-bold text-center mb-4'>How to Convert Images?</h2>
+                    <ol type='a' className='text-gray-300 text-sm md:text-base max-w-md mx-auto space-y-2'>
+                        <li>Drag and drop your images into the designated area or click to select files.</li>
+                        <li>Select the desired output format from the drop-down menu.</li>
+                        <li>Click the “<b>Convert</b>” button to start the conversion process.</li>
+                        <li>Once the conversion is complete, you can download the converted images individually or as a ZIP file.</li>
+                        <li>To clear the selected images, click the “<b>Clear</b>” button.</li>
+                        <li>For more information on the supported formats, refer to the format descriptions above.</li>
+                        <li>For any issues or feedback, feel free to contact us.</li>
+                        <li>Enjoy converting your images with ease!</li>
+                    </ol>
+                    <p className='text-gray-400 text-xs md:text-sm text-center'>Happy converting! 🎉</p>
+
+                </section>
             </div>
         </div>
     );

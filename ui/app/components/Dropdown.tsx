@@ -25,7 +25,7 @@ const NestedDropdown: React.FC = () => {
                     className="w-52 origin-top-right rounded-xl border border-white/5 bg-white/15 p-1 text-sm/6 text-white transition duration-100 ease-out [--anchor-gap:var(--spacing-1)] focus:outline-none data-[closed]:scale-95 data-[closed]:opacity-0 z-50"
                 >
                     <MenuItem>
-                        <Link href="/images" className="w-full">
+                        <Link href="/image-converter" className="w-full">
                             <div className="group flex w-full items-center gap-2 rounded-lg py-1.5 px-3 cursor-pointer data-[focus]:bg-white/10 hover:bg-white/20 transition">
                                 <PhotoIcon className="size-4 fill-white/30" />
                                 <p>Play with Images</p>
