@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Bebas_Neue, Montserrat } from "next/font/google";
 import "./globals.css";
-import { MorphicBackground, Navbar } from "./components";
+import { MorphicBackground, Navbar, GoogleReCaptchaProvider } from "./components";
 import { Toaster } from "react-hot-toast";
 
 import { Analytics } from "@vercel/analytics/react"
@@ -70,13 +70,15 @@ export default function RootLayout({
           suppressHydrationWarning={true}
           className={`${bebasNeue.variable} ${montserrat.variable} antialiased`}
         >
-          <Navbar />
-          <MorphicBackground />
-          <main className="pt-[110px]">
-            {children}
-          </main>
-          <Toaster position="bottom-left" />
-          <Analytics />
+          <GoogleReCaptchaProvider>
+            <Navbar />
+            <MorphicBackground />
+            <main className="pt-[110px]">
+              {children}
+            </main>
+            <Toaster position="bottom-left" />
+            <Analytics />
+          </GoogleReCaptchaProvider>
         </body>
       </html>
     </>
