@@ -24,7 +24,7 @@ export async function middleware(request: NextRequest) {
     const now = Date.now();
     const windowSizeMs = 60_000; // Time window of 1 minute
 
-    const MAX_REQUESTS = 3;
+    const MAX_REQUESTS = 30;
 
     const pipeline = redis.pipeline();
     pipeline.zadd(rateLimitKey, { score: now, member: `${now}` });
