@@ -2,13 +2,14 @@
 
 import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone, FileRejection, DropEvent } from 'react-dropzone';
-import { CheckCircleIcon, ExclamationTriangleIcon, XMarkIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon, ExclamationTriangleIcon, XMarkIcon, ArrowDownTrayIcon, PhotoIcon, TrophyIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
 import JSZip from 'jszip';
 import toast from 'react-hot-toast';
 import { MagickFormat } from '@imagemagick/magick-wasm';
 
 import ImageConverter from '@/lib/image-converter';
 import { MAX_FILES, MAX_FILE_SIZE_MB } from '@/constants';
+import { useReCaptcha } from '@/hooks/useReCaptcha';
 
 const ImagesPage: React.FC = () => {
     const [errors, setErrors] = useState<string[]>([]);
@@ -18,6 +19,7 @@ const ImagesPage: React.FC = () => {
     const [previews, setPreviews] = useState<string[]>([]);
     const [isDownloadable, setIsDownloadable] = useState<boolean>(false);
     const [converter] = useState(() => new ImageConverter());
+    const { verifyReCaptcha, isVerifying } = useReCaptcha();
 
     useEffect(() => {
         const newPreviews = files.map(file => URL.createObjectURL(file));
@@ -149,77 +151,107 @@ const ImagesPage: React.FC = () => {
             },
         });
 
-        setErrors([]);
-        setConversionResults([]);
-        const results: FileConversionResult[] = [];
+        try {
+            toast.loading('Verifying......', {
+                id: toastId,
+                icon: '🔎'
+            });
 
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            const newFileName = file.name.replace(/\.[^/.]+$/, `.${selectedFormat.toLowerCase()}`);
-
-            setConversionResults(prevResults => [
-                ...prevResults,
-                { fileName: newFileName, status: 'converting', progress: 0 }
-            ]);
-
-            try {
-                toast.loading(`Converting ${i + 1}/${files.length}: ${file.name}`, {
-                    id: toastId,
+            const isVerified = await verifyReCaptcha('image_conversion');
+            if (!isVerified) {
+                toast.dismiss(toastId);
+                toast.error('Verification failed. Please try again.', {
+                    icon: '🛡️',
+                    style: {
+                        background: '#FEE2E2',
+                        color: '#B91C1C',
+                        border: '1px solid #F87171',
+                    },
                 });
+                return;
+            }
 
-                const convertedBlob = await converter.convert(file, selectedFormat);
+            setErrors([]);
+            setConversionResults([]);
+            const results: FileConversionResult[] = [];
 
-                results.push({
-                    fileName: newFileName,
-                    result: convertedBlob,
-                    status: 'success',
-                    progress: 100,
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const newFileName = file.name.replace(/\.[^/.]+$/, `.${selectedFormat.toLowerCase()}`);
+
+                setConversionResults(prevResults => [
+                    ...prevResults,
+                    { fileName: newFileName, status: 'converting', progress: 0 }
+                ]);
+
+                try {
+                    toast.loading(`Converting ${i + 1}/${files.length}: ${file.name}`, {
+                        id: toastId,
+                    });
+
+                    const convertedBlob = await converter.convert(file, selectedFormat);
+
+                    results.push({
+                        fileName: newFileName,
+                        result: convertedBlob,
+                        status: 'success',
+                        progress: 100,
+                    });
+
+                    setConversionResults([...results]);
+                } catch (error: any) {
+                    results.push({
+                        fileName: newFileName,
+                        error: error.message,
+                        status: 'error',
+                        progress: 0
+                    });
+
+                    setErrors(prevErrors => [...prevErrors, `Failed to convert ${file.name}: ${error.message}`]);
+                    setConversionResults([...results]);
+                }
+            }
+
+            toast.dismiss(toastId);
+
+            if (results.every(r => r.status === 'success')) {
+                toast.success('All conversions completed successfully!', {
+                    icon: '🎉',
+                    style: {
+                        background: '#D1FAE5',
+                        color: '#065F46',
+                        border: '1px solid #10B981',
+                    },
                 });
-
-                setConversionResults([...results]);
-            } catch (error: any) {
-                console.error(`Error converting ${file.name}:`, error);
-
-                results.push({
-                    fileName: newFileName,
-                    error: error.message,
-                    status: 'error',
-                    progress: 0
+                setIsDownloadable(true);
+            } else if (results.some(r => r.status === 'error')) {
+                toast.error(`${results.filter(r => r.status === 'error').length} file(s) failed to convert`, {
+                    icon: '⚠️',
+                    style: {
+                        background: '#FEE2E2',
+                        color: '#B91C1C',
+                        border: '1px solid #F87171',
+                    },
                 });
-
-                setErrors(prevErrors => [...prevErrors, `Failed to convert ${file.name}: ${error.message}`]);
-                setConversionResults([...results]);
+            } else {
+                toast.success('Conversion completed with some issues', {
+                    icon: '⚠️',
+                    style: {
+                        background: '#FEF3C7',
+                        color: '#92400E',
+                        border: '1px solid #F59E0B',
+                    },
+                });
             }
         }
-
-        toast.dismiss(toastId);
-
-        if (results.every(r => r.status === 'success')) {
-            toast.success('All conversions completed successfully!', {
-                icon: '🎉',
-                style: {
-                    background: '#D1FAE5',
-                    color: '#065F46',
-                    border: '1px solid #10B981',
-                },
-            });
-            setIsDownloadable(true);
-        } else if (results.some(r => r.status === 'error')) {
-            toast.error(`${results.filter(r => r.status === 'error').length} file(s) failed to convert`, {
-                icon: '⚠️',
+        catch (error) {
+            toast.dismiss(toastId);
+            toast.error('An error occurred during conversion. Please try again.', {
+                icon: '❌',
                 style: {
                     background: '#FEE2E2',
                     color: '#B91C1C',
                     border: '1px solid #F87171',
-                },
-            });
-        } else {
-            toast.success('Conversion completed with some issues', {
-                icon: '⚠️',
-                style: {
-                    background: '#FEF3C7',
-                    color: '#92400E',
-                    border: '1px solid #F59E0B',
                 },
             });
         }
@@ -301,6 +333,11 @@ const ImagesPage: React.FC = () => {
                     <div className="text-xs md:text-sm text-yellow-400 bg-yellow-900/30 p-2 md:p-3 rounded-lg flex items-center gap-2 w-full max-w-md">
                         <ExclamationTriangleIcon className="h-4 w-4 md:h-5 md:w-5 flex-shrink-0 text-amber-500" />
                         <span>Each file must be less than {MAX_FILE_SIZE_MB}MB. Maximum {MAX_FILES} images allowed.</span>
+                    </div>
+
+                    <div className="text-xs md:text-sm text-green-400 bg-green-900/30 p-2 md:p-3 rounded-lg flex items-center justify-center gap-2 w-full max-w-md ">
+                        <ShieldCheckIcon className="h-4 w-4 md:h-5 md:w-5 flex-shrink-0 text-green-500" />
+                        <span>Protected by Google reCAPTCHA</span>
                     </div>
                 </header>
 
@@ -471,7 +508,7 @@ const ImagesPage: React.FC = () => {
 
                 <section className='mt-8'>
                     <h2 className='text-xl md:text-2xl font-bold text-center mb-4'>How to Convert Images?</h2>
-                    <ol type='a' className='text-gray-300 text-sm md:text-base max-w-md mx-auto space-y-2'>
+                    <ol type='a' className='text-gray-300 text-sm md:text-base max-w-md mx-auto space-y-2 text-center'>
                         <li>Drag and drop your images into the designated area or click to select files.</li>
                         <li>Select the desired output format from the drop-down menu.</li>
                         <li>Click the “<b>Convert</b>” button to start the conversion process.</li>
@@ -481,8 +518,21 @@ const ImagesPage: React.FC = () => {
                         <li>For any issues or feedback, feel free to contact us.</li>
                         <li>Enjoy converting your images with ease!</li>
                     </ol>
-                    <p className='text-gray-400 text-xs md:text-sm text-center'>Happy converting! 🎉</p>
 
+                    <div className='my-7 flex flex-col gap-3 md:gap-4'>
+
+                        <div className='flex items-center justify-center flex-col text-center bg-white/10 shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] backdrop-blur-[2px] rounded-[10px] border border-white/20 p-4 md:p-6 gap-2'>
+                            <PhotoIcon className="w-12 h-12 md:w-14 md:h-14 p-3 bg-orange-500/20 text-orange-500 rounded-full " />
+                            <h4 className="text-lg font-semibold text-gray-200">Convert Any Image</h4>
+                            <p className="text-gray-200">Convert more than 500+ image formats into popular formats like JPG, PNG, WebP, and more. You can also convert camera RAW image files.</p>
+                        </div>
+
+                        <div className='flex items-center justify-center flex-col text-center bg-white/10 shadow-[0_8px_32px_0_rgba(31,38,135,0.37)] backdrop-blur-[2px] rounded-[10px] border border-white/20 p-4 md:p-6 gap-2'>
+                            <TrophyIcon className="w-12 h-12 md:w-14 md:h-14 p-3 bg-orange-500/20 text-orange-500 rounded-full" />
+                            <h4 className="text-lg font-semibold text-gray-200">Best Image Converter</h4>
+                            <p className="text-gray-200">Convert your images with perfect quality, size, and compression. Plus, you can also batch convert images using this tool.</p>
+                        </div>
+                    </div>
                 </section>
             </div>
         </div>

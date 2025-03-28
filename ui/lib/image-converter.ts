@@ -24,7 +24,6 @@ class ImageConverter {
                 if (e.data.error) {
                     reject(new Error(e.data.error));
                 } else {
-                    console.log('Image conversion result:', e.data.result);
                     resolve(e.data.result);
                 }
             };

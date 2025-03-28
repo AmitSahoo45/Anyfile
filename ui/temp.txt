@@ -1,59 +1,224 @@
-// 'use client';
+'use client';
+// lib/image-converter.ts
+import { MagickFormat } from '@imagemagick/magick-wasm';
+import WorkerLoader from 'worker-loader!../workers/imageWorker.worker.ts';
+// import heic2any from 'heic2any';
 
-// import React, { useEffect } from 'react';
-// import anime from 'animejs';
+type ConversionOptions = {
+    outputFormat: keyof typeof MagickFormat;
+    quality?: number;
+};
 
-// interface SplashScreenProps {
-//     onAnimationComplete: () => void;
-// }
+class ImageConverter {
+    private worker: Worker = null as unknown as Worker; // Initialize with null to avoid TypeScript error
 
-// const SplashScreen: React.FC<SplashScreenProps> = ({ onAnimationComplete }) => {
-//     useEffect(() => {
-//         const greetings = ["नमस्ते", "Bienvenido", "Bonjour", "Hello", "Ciao"];
+    constructor() {
+        if (typeof window !== 'undefined') {
+            this.worker = new WorkerLoader();
+        }
+    }
 
-//         const timeline = anime.timeline({
-//             easing: 'easeInOutQuad',
-//             complete: onAnimationComplete,
+    async convert(file: File, options: ConversionOptions): Promise<Blob> {
+        // if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
+        //     const converted = await heic2any({
+        //         blob: file,
+        //         toType: 'image/jpeg',
+        //         quality: options.quality ? options.quality / 100 : 0.8
+        //     });
+        //     file = new File([converted as Blob], file.name.replace(/\.[^/.]+$/, '.jpg'));
+        // }
+
+        console.log('File details in convert() : \n\n', file);
+        const buffer = await file.arrayBuffer()
+        const bufferData = new Uint8Array(buffer);
+        console.log('Buffer details in convert() : \n\n', bufferData);
+
+        return new Promise((resolve, reject) => {
+            const messageId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+            const handleMessage = (e: MessageEvent) => {
+                if (!e.data || e.data.id !== messageId) return; // Not our message
+
+                // Clean up
+                this.worker.removeEventListener('message', handleMessage);
+
+                if (e.data.error) {
+                    console.error('Conversion error:', e.data.error);
+                    reject(new Error(e.data.error));
+                    return;
+                }
+
+                if (!e.data.result) {
+                    reject(new Error('Worker returned no result'));
+                    return;
+                }
+
+
+                try {
+                    const convertedBlob = new Blob([e.data.result], { type: `image/${options.outputFormat.toLowerCase()}` });
+                    resolve(convertedBlob);
+                } catch (error: any) {
+                    console.error('Blob creation error:', error);
+                    reject(new Error(`Failed to create blob: ${error.message}`));
+                }
+            };
+
+            this.worker.addEventListener('message', handleMessage);
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                if (!e.target?.result) {
+                    reject(new Error('File read error: No result'));
+                    return;
+                }
+
+                this.worker.postMessage({
+                    id: messageId,
+                    buffer: bufferData,
+                    fileName: file.name,
+                    options
+                });
+            };
+
+            reader.onerror = (error) => {
+                console.error('File read error:', error);
+                reject(new Error(`File read error: ${error}`));
+            };
+
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    terminate() {
+        this.worker.terminate();
+    }
+}
+
+export default ImageConverter;
+image converter.ts
+
+
+-----------------------
+/// <reference lib="webworker" />
+// import { initializeImageMagick, ImageMagick, MagickFormat } from '@imagemagick/magick-wasm';
+
+// const response = await fetch('/magick.wasm');
+// const wasmBytes = new Uint8Array(await response.arrayBuffer());
+// await initializeImageMagick(wasmBytes);
+
+// self.addEventListener('message', async (e) => {
+//     try {
+//         const { buffer, fileName, options } = e.data;
+
+//         console.log('suck 0\n\n MY BUFFER \n\n', buffer);
+//         ImageMagick.read(buffer, (image) => {
+//             image.format = MagickFormat[options.outputFormat as keyof typeof MagickFormat];
+
+//             console.log('suck 1');
+
+//             if (options.quality)
+//                 image.quality = options.quality;
+
+//             console.log('suck 2');
+//             image.write((data) => {
+//                 self.postMessage({
+//                     result: data.buffer
+//                 }, [data.buffer]);
+//             });
+//             console.log('suck 3');
 //         });
-
-//         greetings.forEach((greeting) => {
-//             timeline
-//                 .add({
-//                     targets: '.splash-greeting',
-//                     opacity: [0, 1],
-//                     translateY: [-50, 0],
-//                     duration: 500,
-//                     begin: () => {
-//                         const el = document.querySelector('.splash-greeting');
-//                         if (el) el.textContent = greeting;
-//                     },
-//                 })
-//                 .add({
-//                     targets: '.splash-greeting',
-//                     opacity: [1, 0],
-//                     translateY: [0, 50],
-//                     duration: 150, // Increased from 100ms for a smoother fade-out
-//                     delay: 300,    // Slight delay before starting the fade-out
-//                 });
+//     } catch (error) {
+//         console.log('Error in worker:', error);
+//         self.postMessage({
+//             error: error instanceof Error ? error.message : 'Conversion failed'
 //         });
+//     }
+// });
 
-//         timeline.add({
-//             targets: '.splash',
-//             opacity: [1, 0],
-//             duration: 500, // Longer duration for overall splash fade-out
-//         });
-//     }, [onAnimationComplete]);
+import { initializeImageMagick, ImageMagick, MagickFormat } from '@imagemagick/magick-wasm';
 
-//     return (
-//         <div
-//             className="splash fixed inset-0 flex items-center justify-center bg-black z-50"
-//             style={{ opacity: 0 }}
-//         >
-//             <h1 className="splash-greeting opacity-0 text-white text-4xl font-bold">
-//                 {/* This text is updated by the timeline */}
-//             </h1>
-//         </div>
-//     );
-// };
+// Format mapping - maps lowercase format names to MagickFormat enum keys
+// changes here different from perplexity.ai
+const formatMapping: Record<string, keyof typeof MagickFormat> = {
+    'jpg': 'Jpg',
+    'jpeg': 'Jpg',
+    'png': 'Png',
+    'gif': 'Gif',
+    'bmp': 'Bmp',
+    'tiff': 'Tiff',
+    'webp': 'WebP'
+    // Add others as neededa
+};
 
-// export default SplashScreen;
+// Track initialization status
+let initialized = false;
+
+// Initialize ImageMagick
+async function initializeMagick() {
+    if (initialized) return;
+
+    try {
+        const response = await fetch('/magick.wasm');
+        if (!response.ok)
+            throw new Error(`Failed to fetch WASM: ${response.status} ${response.statusText}`);
+
+        const wasmBytes = new Uint8Array(await response.arrayBuffer());
+        await initializeImageMagick(wasmBytes);
+        initialized = true;
+    } catch (error) {
+        console.error('[worker] ImageMagick initialization failed:', error);
+        throw error;
+    }
+}
+
+self.addEventListener('message', async (e) => {
+    const { id, buffer, fileName, options } = e.data;
+
+    try {
+        if (!initialized) await initializeMagick();
+
+        if (!buffer) throw new Error('No image buffer provided');
+
+        if (!options || !options.outputFormat) throw new Error('No output format specified');
+
+        const formatStr = options.outputFormat.toLowerCase();
+        const formatKey = formatMapping[formatStr];
+
+        if (!formatKey) throw new Error(`Unsupported output format: ${options.outputFormat}`);
+
+        // ImageMagick.read(uint8Buffer, (image) => {
+        ImageMagick.read(buffer, (image) => {
+            try {
+                // Set the output format
+                image.format = MagickFormat[formatKey];
+
+                // Use the provided quality, or fallback to a default (80)
+                if (options.quality && typeof options.quality === 'number') {
+                    image.quality = options.quality;
+                } else {
+                    image.quality = 80;
+                }
+
+                if (formatKey === 'Jpg' || formatKey === 'WebP') {
+                    image.strip(); // Remove metadata to optimize compression
+                }
+
+                // Write the image to a new buffer
+                image.write((data) => {
+                    const bufferCopy = data.buffer.slice(0);  // Fresh copy to guarantee detachability
+                    self.postMessage({ id, result: bufferCopy });
+                });
+            } catch (err) {
+                self.postMessage({
+                    id,
+                    error: err instanceof Error ? err.message : 'Image processing failed'
+                });
+            }
+        });
+    } catch (error) {
+        self.postMessage({
+            id,
+            error: error instanceof Error ? error.message : 'Conversion failed'
+        });
+    }
+});
