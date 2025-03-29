@@ -4,15 +4,22 @@ import { initializeImageMagick, ImageMagick } from '@imagemagick/magick-wasm';
 
 let initialized = false;
 
-self.onmessage = async (event) => {
-    const { id, buffer, outputFormat, quality } = event.data;
+async function loadWasm() {
+    if (!initialized) {
+        const response = await fetch('/magick.wasm');
+        await initializeImageMagick(await response.arrayBuffer());
+        initialized = true;
+    }
+}
+
+self.onmessage = async (e: MessageEvent) => {
+    const { id, payload } = e.data;
+    const { buffer, outputFormat, quality } = payload;
 
     try {
-        if (!initialized) {
-            const response = await fetch('/magick.wasm');
-            await initializeImageMagick(await response.arrayBuffer());
-            initialized = true;
-        }
+        if (!initialized) await loadWasm();
+
+        self.postMessage({ id, progress: 50 });
 
         const data = new Uint8Array(buffer);
         ImageMagick.read(data, (image) => {
@@ -21,7 +28,7 @@ self.onmessage = async (event) => {
 
             image.write((data) => {
                 const blob = new Blob([data], { type: `image/${outputFormat}` });
-                self.postMessage({ id, result: blob });
+                self.postMessage({ id, progress: 100, result: blob });
             });
         });
     } catch (error) {

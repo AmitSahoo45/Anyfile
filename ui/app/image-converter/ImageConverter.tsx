@@ -7,7 +7,7 @@ import JSZip from 'jszip';
 import toast from 'react-hot-toast';
 import { MagickFormat } from '@imagemagick/magick-wasm';
 
-import ImageConverter from '@/lib/image-converter';
+import ImageConverter from '@/lib/image-converter/image-converter';
 import { MAX_FILES, MAX_FILE_SIZE_MB } from '@/constants';
 import { useReCaptcha } from '@/hooks/useReCaptcha';
 
@@ -159,7 +159,6 @@ const ImagesPage: React.FC = () => {
 
             const isVerified = await verifyReCaptcha('image_conversion');
             if (!isVerified) {
-                toast.dismiss(toastId);
                 toast.error('Verification failed. Please try again.', {
                     icon: '🛡️',
                     style: {
@@ -170,47 +169,101 @@ const ImagesPage: React.FC = () => {
                 });
                 return;
             }
+            toast.dismiss(toastId);
 
             setErrors([]);
-            setConversionResults([]);
-            const results: FileConversionResult[] = [];
-
-            for (let i = 0; i < files.length; i++) {
-                const file = files[i];
+            const initialResults: FileConversionResult[] = files.map((file: File) => {
                 const newFileName = file.name.replace(/\.[^/.]+$/, `.${selectedFormat.toLowerCase()}`);
+                return {
+                    fileName: newFileName,
+                    progress: 0,
+                    status: 'converting',
+                };
+            });
+            setConversionResults(initialResults);
 
-                setConversionResults(prevResults => [
-                    ...prevResults,
-                    { fileName: newFileName, status: 'converting', progress: 0 }
-                ]);
-
-                try {
-                    toast.loading(`Converting ${i + 1}/${files.length}: ${file.name}`, {
-                        id: toastId,
-                    });
-
-                    const convertedBlob = await converter.convert(file, selectedFormat);
-
-                    results.push({
-                        fileName: newFileName,
-                        result: convertedBlob,
-                        status: 'success',
-                        progress: 100,
-                    });
-
-                    setConversionResults([...results]);
-                } catch (error: any) {
-                    results.push({
-                        fileName: newFileName,
-                        error: error.message,
-                        status: 'error',
-                        progress: 0
-                    });
-
-                    setErrors(prevErrors => [...prevErrors, `Failed to convert ${file.name}: ${error.message}`]);
-                    setConversionResults([...results]);
+            const conversionPromises: Promise<FileConversionResult>[] = files.map(
+                (file: File, index: number): Promise<FileConversionResult> => {
+                  const newFileName = file.name.replace(/\.[^/.]+$/, `.${selectedFormat.toLowerCase()}`);
+          
+                  return new Promise<FileConversionResult>((resolve) => {
+                    // Call the converter with an onProgress callback.
+                    // Ensure your ImageConverter.convert method signature is updated to accept onProgress.
+                    converter
+                      .convert(file, selectedFormat, 80, (progress: number) => {
+                        // Update progress for this file.
+                        setConversionResults((prevResults) => {
+                          const newResults = [...prevResults];
+                          newResults[index] = {
+                            ...newResults[index],
+                            progress,
+                          };
+                          return newResults;
+                        });
+                      })
+                      .then((convertedBlob: Blob) => {
+                        resolve({
+                          fileName: newFileName,
+                          result: convertedBlob,
+                          status: 'success',
+                          progress: 100,
+                        });
+                      })
+                      .catch((error: any) => {
+                        resolve({
+                          fileName: newFileName,
+                          error: error.message,
+                          status: 'error',
+                          progress: 0,
+                        });
+                      });
+                  });
                 }
-            }
+              );
+
+            // Wait for all conversions to finish concurrently.
+            const results: FileConversionResult[] = await Promise.all(conversionPromises);
+            setConversionResults(results);
+
+            //#region Conversion Logic
+            // for (let i = 0; i < files.length; i++) {
+            //     const file = files[i];
+            //     const newFileName = file.name.replace(/\.[^/.]+$/, `.${selectedFormat.toLowerCase()}`);
+
+            //     setConversionResults(prevResults => [
+            //         ...prevResults,
+            //         { fileName: newFileName, status: 'converting', progress: 0 }
+            //     ]);
+
+            //     try {
+            //         toast.loading(`Converting ${i + 1}/${files.length}: ${file.name}`, {
+            //             id: toastId,
+            //         });
+
+            //         const convertedBlob = await converter.convert(file, selectedFormat);
+
+            //         results.push({
+            //             fileName: newFileName,
+            //             result: convertedBlob,
+            //             status: 'success',
+            //             progress: 100,
+            //         });
+
+            //         setConversionResults([...results]);
+            //     } catch (error: any) {
+            //         results.push({
+            //             fileName: newFileName,
+            //             error: error.message,
+            //             status: 'error',
+            //             progress: 0
+            //         });
+
+            //         setErrors(prevErrors => [...prevErrors, `Failed to convert ${file.name}: ${error.message}`]);
+            //         setConversionResults([...results]);
+            //     }
+            // }
+            //#endregion
+
 
             toast.dismiss(toastId);
 
